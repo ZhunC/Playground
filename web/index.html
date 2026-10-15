@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>studydeck</title>
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">◆</span>
+        <span class="brand-name">studydeck</span>
+      </div>
+      <nav class="nav">
+        <button class="nav-btn active" data-view="store">Store</button>
+        <button class="nav-btn" data-view="library">Library</button>
+        <button class="nav-btn" data-view="wishlist">
+          Wishlist <span class="badge" id="wishlist-badge">0</span>
+        </button>
+        <button class="nav-btn" data-view="reading">
+          Reading <span class="badge" id="reading-badge">0</span>
+        </button>
+        <button class="nav-btn" data-view="finished">Finished</button>
+      </nav>
+      <form class="searchbar" id="searchbar" autocomplete="off">
+        <input type="search" id="search-input" placeholder="Search papers, researchers, authors…" />
+      </form>
+    </header>
+
+    <main id="main">
+      <div class="loading" id="loading">Stocking the shelves…</div>
+    </main>
+
+    <!-- Detail modal -->
+    <div class="modal-scrim" id="modal" hidden>
+      <div class="modal" id="modal-body"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs" type="module"></script>
+    <script src="app.js" type="module"></script>
+  </body>
+</html>

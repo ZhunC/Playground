@@ -1,0 +1,11 @@
+# personal state / logs
+data/
+refresh-log.txt
+*.db
+*.db-journal
+.env
+
+# Windows scheduler scripts (hard-coded home paths)
+refresh-catalog.cmd
+refresh-hidden.vbs
+start-hidden.vbs

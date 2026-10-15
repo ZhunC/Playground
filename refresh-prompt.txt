@@ -1,0 +1,17 @@
+Refresh the studydeck catalog with fresh curated recommendations. This is an unattended nightly job — do not ask for confirmation, just do the work and exit.
+
+Context:
+- Obsidian vault root: C:\Users\Gaming pc\Documents\ZhunCollection (notes live under content\notes and content\reflections)
+- studydeck project (your working directory): C:\Users\Gaming pc\Documents\ws\studydeck
+- Current catalog to refresh: catalog.json
+- Already-consumed items: data\read.json (finished) and data\reading.json (in progress)
+- Catalog schema + cover-art rules: README.md, "Catalog item schema" section
+
+Task:
+1. Read catalog.json (current picks), data\read.json, and data\reading.json to see what's already there and what's been consumed.
+2. Read the vault notes under content\notes and content\reflections to understand current interests, tags, and depth.
+3. Rewrite catalog.json with a refreshed, cross-disciplinary set of curated items (papers, topics, authors, labs) spanning math, physics, CS, embedded/EE, robotics, controls, sensors, and comp-bio — following the exact JSON schema in README.md.
+4. Keep previously-good entries that are still relevant and not yet finished, but this runs nightly, so don't just reshuffle the same list — bring in at least a few genuinely new picks each run, grounded in recent vault activity.
+5. Every item's blurb must reference specific vault notes via [[wikilink]] syntax, matching the style of the existing catalog.
+6. You do NOT have web access in this run (no WebFetch/WebSearch/Bash). For "author"/"lab" items already in the current catalog, carry forward their existing "photo" URL as-is. For any brand-new author/lab you introduce, leave "photo" unset — it will fall back to a monogram capsule until a full manual refresh (which has web access) fills it in.
+7. Write the result as valid JSON directly to catalog.json. Do not modify any other file.
