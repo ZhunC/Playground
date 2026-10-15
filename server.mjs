@@ -17,7 +17,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const VAULT_ROOT = path.resolve(__dirname, "..", "..", "ZhunCollection");
+// Vault location: STUDYDECK_VAULT overrides; default assumes ws/studydeck sits beside ZhunCollection.
+const VAULT_ROOT = process.env.STUDYDECK_VAULT
+  ? path.resolve(process.env.STUDYDECK_VAULT)
+  : path.resolve(__dirname, "..", "..", "ZhunCollection");
 const CONTENT_DIR = path.join(VAULT_ROOT, "content");
 const WEB_DIR = path.join(__dirname, "web");
 const DATA_DIR = path.join(__dirname, "data");
