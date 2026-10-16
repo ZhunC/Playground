@@ -1,69 +1,21 @@
 // studydeck frontend — vanilla ESM.
+//
+// Views: feed (home, the reel rotation) · papers (the curated store) ·
+// library · wishlist · reading · finished · search.
+// Shared primitives live in shared.js; all PDF work lives in pdfreel.js.
 
-import * as pdfjsLib from "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs";
-pdfjsLib.GlobalWorkerOptions.workerSrc =
-  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs";
-
-const VAULT_NAME = "ZhunCollection";
-
-const state = {
-  library: [],
-  profile: [],
-  catalog: [],
-  wishlist: [],
-  reading: [],
-  read: [], // "finished" archive
-  activeTags: new Set(),
-  view: "store",
-  prevView: "store",
-  searchQuery: "",
-  searchResults: null, // { papers, authors }
-};
+import {
+  state, $, el, esc, wikilinks, colorFor, obsidianURI, typeLabel, trunc,
+  inWishlist, inReading, isFinished, toItem, post, scheduleRender,
+} from "./shared.js";
+import { loadPdf, renderFigureSnippet } from "./pdfreel.js";
+import { renderFeed, syncFeedRails, handleFeedKey, pauseFeed, resumeFeed, appendFeed } from "./reel.js";
 
 const coverCache = new Map(); // id -> dataURL
-const FALLBACK_COLORS = [
-  "#2f4a6b", "#3d3a6b", "#4a3560", "#2f5c4a",
-  "#5c4a2f", "#4a2f3d", "#35505c", "#503a2f", "#2f5c5c",
-];
-
-const $ = (s, r = document) => r.querySelector(s);
 const main = $("#main");
 
 // ---------------------------------------------------------------------------
-// utils
-// ---------------------------------------------------------------------------
-function el(tag, cls, html) {
-  const n = document.createElement(tag);
-  if (cls) n.className = cls;
-  if (html != null) n.innerHTML = html;
-  return n;
-}
-function esc(s) {
-  return String(s ?? "").replace(/[&<>"]/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])
-  );
-}
-// [[Note]] and [[Note|alias]] -> styled span
-function wikilinks(s) {
-  return esc(s).replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, a, b) =>
-    `<span class="wl">${esc(b || a)}</span>`
-  );
-}
-function colorFor(id) {
-  let h = 0;
-  for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return FALLBACK_COLORS[h % FALLBACK_COLORS.length];
-}
-function obsidianURI(path) {
-  return `obsidian://open?vault=${encodeURIComponent(VAULT_NAME)}&file=${encodeURIComponent(path)}`;
-}
-function inWishlist(id) { return state.wishlist.some((w) => w.id === id); }
-function inReading(id) { return state.reading.some((r) => r.id === id); }
-function isFinished(id) { return state.read.some((r) => r.id === id); }
-function typeLabel(t) { return { paper: "paper", topic: "topic", author: "researcher", lab: "lab" }[t] || t; }
-
-// ---------------------------------------------------------------------------
-// cover rendering (PDF page 1 for papers, monogram capsule otherwise)
+// cover rendering (figure 1 for papers, monogram capsule otherwise)
 // ---------------------------------------------------------------------------
 const io = new IntersectionObserver(
   (entries) => {
@@ -76,23 +28,6 @@ const io = new IntersectionObserver(
   },
   { rootMargin: "250px" }
 );
-
-let active = 0;
-const queueRender = [];
-function scheduleRender(fn) {
-  queueRender.push(fn);
-  pump();
-}
-function pump() {
-  while (active < 3 && queueRender.length) {
-    const fn = queueRender.shift();
-    active++;
-    fn().finally(() => {
-      active--;
-      pump();
-    });
-  }
-}
 
 function buildCap(item, opts = {}) {
   const cap = el("div", "cap");
@@ -124,7 +59,7 @@ function buildCap(item, opts = {}) {
   } else if (item.arxivId) {
     cap.dataset.id = item.id;
     cap.dataset.arxiv = item.arxivId;
-    if (opts.eager) scheduleRender(() => renderCover(cap));
+    if (opts.eager) renderCover(cap);
     else io.observe(cap);
   }
   return cap;
@@ -135,126 +70,20 @@ async function renderCover(cap) {
   const arxiv = cap.dataset.arxiv;
   if (!arxiv) return;
   if (coverCache.has(id)) return applyCover(cap, coverCache.get(id));
-  await new Promise((res) =>
-    scheduleRenderInline(async () => {
+  try {
+    const url = await scheduleRender(async () => {
+      const doc = await loadPdf(arxiv);
       try {
-        const doc = await pdfjsLib.getDocument({ url: `/pdf?id=${encodeURIComponent(arxiv)}` }).promise;
-        const url = await renderFigureSnippet(doc);
-        coverCache.set(id, url);
-        applyCover(cap, url);
-      } catch (_) {
-        /* keep monogram fallback */
+        return await renderFigureSnippet(doc);
       } finally {
-        res();
+        doc.destroy?.();
       }
-    })
-  );
-}
-// small wrapper so both IO and eager paths share the concurrency pump
-function scheduleRenderInline(fn) { scheduleRender(fn); }
-
-// Cover art = figure 1 (best-effort) or a cropped snippet of the cover page —
-// never the whole page shrunk to fit the capsule.
-async function renderFigureSnippet(doc) {
-  for (const pageNum of [1, 2]) {
-    if (pageNum > doc.numPages) break;
-    const page = await doc.getPage(pageNum);
-    const region = await findLargestImageRegion(page);
-    if (region) {
-      const url = await renderCroppedRegion(page, region);
-      if (url) return url;
-    }
+    });
+    coverCache.set(id, url);
+    applyCover(cap, url);
+  } catch {
+    /* keep monogram fallback */
   }
-  return renderPageSnippet(await doc.getPage(1));
-}
-
-// Walk page 1/2's operator list, tracking the CTM through save/restore/
-// transform, and return the page-space bounding box of the largest painted
-// image — a stand-in for "figure 1" without needing to parse PDF structure.
-async function findLargestImageRegion(page) {
-  const opList = await page.getOperatorList();
-  const OPS = pdfjsLib.OPS;
-  const viewport = page.getViewport({ scale: 1 });
-  const pageArea = viewport.width * viewport.height;
-  const stack = [];
-  let ctm = [1, 0, 0, 1, 0, 0];
-  const mul = (a, b) => [
-    a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1],
-    a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3],
-    a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5],
-  ];
-  const paintOps = new Set([OPS.paintImageXObject, OPS.paintJpegXObject]);
-  let best = null;
-  for (let i = 0; i < opList.fnArray.length; i++) {
-    const fn = opList.fnArray[i];
-    if (fn === OPS.save) stack.push(ctm);
-    else if (fn === OPS.restore) ctm = stack.pop() || ctm;
-    else if (fn === OPS.transform) ctm = mul(ctm, opList.argsArray[i]);
-    else if (paintOps.has(fn)) {
-      const corners = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => [
-        ctm[0] * x + ctm[2] * y + ctm[4],
-        ctm[1] * x + ctm[3] * y + ctm[5],
-      ]);
-      const xs = corners.map((c) => c[0]);
-      const ys = corners.map((c) => c[1]);
-      const x0 = Math.min(...xs), x1 = Math.max(...xs);
-      const y0 = Math.min(...ys), y1 = Math.max(...ys);
-      const area = (x1 - x0) * (y1 - y0);
-      // Skip specks (icons/rules) and near-full-page backgrounds/scans.
-      if (area < pageArea * 0.02 || area > pageArea * 0.8) continue;
-      if (!best || area > best.area) best = { x0, x1, y0, y1, w: x1 - x0, h: y1 - y0, area };
-    }
-  }
-  return best;
-}
-
-// Render just enough of the page to crop the given page-space region at good
-// resolution, with a small margin so a caption isn't cut off.
-async function renderCroppedRegion(page, region) {
-  const pad = 0.06;
-  const mx = region.w * pad, my = region.h * pad;
-  const x0 = region.x0 - mx, x1 = region.x1 + mx;
-  const y0 = region.y0 - my, y1 = region.y1 + my;
-  const scale = Math.min(6, Math.max(1.2, 640 / Math.max(1, x1 - x0)));
-  const vp = page.getViewport({ scale });
-
-  const full = el("canvas");
-  full.width = vp.width;
-  full.height = vp.height;
-  await page.render({ canvasContext: full.getContext("2d"), viewport: vp }).promise;
-
-  const p0 = vp.convertToViewportPoint(x0, y0);
-  const p1 = vp.convertToViewportPoint(x1, y1);
-  const sx = Math.max(0, Math.min(p0[0], p1[0]));
-  const sy = Math.max(0, Math.min(p0[1], p1[1]));
-  const sw = Math.min(vp.width - sx, Math.abs(p1[0] - p0[0]));
-  const sh = Math.min(vp.height - sy, Math.abs(p1[1] - p0[1]));
-  if (sw < 40 || sh < 40) return null;
-
-  const crop = el("canvas");
-  crop.width = sw;
-  crop.height = sh;
-  crop.getContext("2d").drawImage(full, sx, sy, sw, sh, 0, 0, sw, sh);
-  return crop.toDataURL("image/jpeg", 0.85);
-}
-
-// No figure found on page 1/2 — crop a snippet of the cover page (title
-// through abstract) instead of shrinking the whole page into the capsule.
-async function renderPageSnippet(page) {
-  const base = page.getViewport({ scale: 1 });
-  const vp = page.getViewport({ scale: 640 / base.width });
-  const full = el("canvas");
-  full.width = vp.width;
-  full.height = vp.height;
-  await page.render({ canvasContext: full.getContext("2d"), viewport: vp }).promise;
-
-  const sy = vp.height * 0.08;
-  const sh = Math.min(vp.height - sy, vp.width * 0.68);
-  const crop = el("canvas");
-  crop.width = vp.width;
-  crop.height = sh;
-  crop.getContext("2d").drawImage(full, 0, sy, vp.width, sh, 0, 0, vp.width, sh);
-  return crop.toDataURL("image/jpeg", 0.85);
 }
 
 function applyCover(cap, url) {
@@ -291,7 +120,19 @@ function card(item) {
 }
 
 // ---------------------------------------------------------------------------
-// STORE view
+// FEED view (home)
+// ---------------------------------------------------------------------------
+function renderFeedView() {
+  renderFeed(main, {
+    openDetail,
+    toggleWishlist,
+    toggleReading,
+    markFinished,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// PAPERS view (the original store)
 // ---------------------------------------------------------------------------
 function renderStore() {
   main.innerHTML = "";
@@ -461,7 +302,7 @@ function renderCollection(list, title, sub, emptyMsg) {
 function renderWishlist() {
   renderCollection(state.wishlist, "Wishlist",
     "Papers, topics, researchers, and labs you want to get to. Start reading one to move it along.",
-    "Your wishlist is empty. Browse the store or search to add something.");
+    "Your wishlist is empty. Browse the feed or search to add something.");
 }
 function renderReading() {
   renderCollection(state.reading, "Reading",
@@ -534,10 +375,15 @@ function renderSearch() {
 // ---------------------------------------------------------------------------
 const modal = $("#modal");
 const modalBody = $("#modal-body");
-function closeModal() { modal.hidden = true; modalBody.innerHTML = ""; }
+function closeModal() {
+  modal.hidden = true;
+  modalBody.innerHTML = "";
+  if (state.view === "feed") resumeFeed();
+}
 modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
 
 function openDetail(item) {
+  if (state.view === "feed") pauseFeed();
   modalBody.innerHTML = "";
   const capWrap = el("div", "modal-cap");
   const cap = buildCap(item, { showType: false, showMatch: false, eager: true });
@@ -667,19 +513,6 @@ function openNoteDetail(n) {
 // ---------------------------------------------------------------------------
 // wishlist / read actions
 // ---------------------------------------------------------------------------
-function toItem(item) {
-  return {
-    id: item.id, type: item.type, title: item.title,
-    arxivId: item.arxivId || null, link: item.link || null, tags: item.tags || [],
-  };
-}
-async function post(url, body) {
-  const r = await fetch(url, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return r.json();
-}
 async function toggleWishlist(item) {
   const action = inWishlist(item.id) ? "remove" : "add";
   const res = await post("/api/wishlist", { action, item: toItem(item) });
@@ -707,13 +540,17 @@ async function markFinished(item) {
 function refresh() {
   $("#wishlist-badge").textContent = state.wishlist.length;
   $("#reading-badge").textContent = state.reading.length;
+  document.body.classList.toggle("feed-mode", state.view === "feed");
   const v = state.view;
-  if (v === "store") renderStore();
+  if (v === "feed") renderFeedView();
+  else if (v === "papers") renderStore();
   else if (v === "library") renderLibrary();
   else if (v === "wishlist") renderWishlist();
   else if (v === "reading") renderReading();
   else if (v === "finished") renderFinished();
   else if (v === "search") renderSearch();
+  // The feed DOM is kept alive across refreshes; just re-sync its buttons.
+  if (v !== "feed") syncFeedRails();
 }
 function setView(v) {
   if (v !== "search") state.prevView = v;
@@ -741,12 +578,16 @@ searchInput.addEventListener("input", () => {
 });
 
 document.addEventListener("keydown", (e) => {
-  if (!modal.hidden && e.key === "Escape") {
-    closeModal();
+  if (!modal.hidden) {
+    if (e.key === "Escape") closeModal();
+    return;
+  }
+  if (document.activeElement === searchInput) return;
+  if (state.view === "feed") {
+    if (e.key === "Escape") { setView("papers"); return; }
+    if (handleFeedKey(e)) e.preventDefault();
   }
 });
-
-function trunc(s, n) { return s && s.length > n ? s.slice(0, n - 1) + "…" : s; }
 
 // ---------------------------------------------------------------------------
 // boot
@@ -759,9 +600,47 @@ async function boot() {
       catalog: d.catalog || [], wishlist: d.wishlist || [],
       reading: d.reading || [], read: d.read || [],
     });
-    refresh();
   } catch (e) {
     main.innerHTML = `<div class="empty">Couldn't load data: ${esc(e.message)}</div>`;
+    return;
+  }
+  // The feed is served from cache so this returns at once; on the first visit
+  // of a day the server is still querying arXiv, and those papers get appended
+  // when they land.
+  try {
+    const f = await (await fetch("/api/feed")).json();
+    state.feed = f.feed || [];
+    if (f.errors?.length) console.warn("feed discovery errors:", f.errors);
+    refresh();
+    if (f.discovering) pollForNewPapers();
+    return;
+  } catch (e) {
+    console.warn("feed unavailable:", e.message);
+    state.feed = [];
+  }
+  refresh();
+}
+
+// While the server is querying arXiv, check back until it finishes and slot
+// the new papers in behind what is already playing.
+async function pollForNewPapers(tries = 12) {
+  for (let i = 0; i < tries; i++) {
+    await new Promise((r) => setTimeout(r, 5000));
+    let f;
+    try {
+      f = await (await fetch("/api/feed")).json();
+    } catch {
+      continue;
+    }
+    const added = appendFeed(f.feed || []);
+    if (added) {
+      $("#feed-note")?.remove();
+      console.log(`feed: +${added} newly discovered papers`);
+    }
+    if (!f.discovering) {
+      if (f.errors?.length) console.warn("feed discovery errors:", f.errors);
+      return;
+    }
   }
 }
 boot();

@@ -224,3 +224,148 @@ button { font-family: inherit; cursor: pointer; }
 .because-item .bdot { color: var(--accent-2); }
 .modal-actions { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
 .spinner { color: var(--text-3); font-size: 13px; }
+
+/* =========================================================================
+   FEED — full-viewport vertical reels (home view)
+   ========================================================================= */
+body.feed-mode { overflow: hidden; }
+body.feed-mode #main { padding: 0; max-width: none; }
+
+.feed {
+  height: calc(100vh - 58px);
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+}
+.feed::-webkit-scrollbar { display: none; }
+
+.reel {
+  position: relative;
+  height: calc(100vh - 58px);
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  overflow: hidden;
+  background: #0d0f13;
+  cursor: pointer;
+  user-select: none;
+  /* Column layout, so the caption plate can never cover the figure — these
+     figures are letterboxed (object-fit: contain), not full-bleed, so an
+     overlay would just hide the bottom third of the artwork. */
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- stage / artwork ---- */
+.reel-stage { position: relative; flex: 1 1 auto; min-height: 0; }
+.reel-art {
+  position: absolute; inset: 24px 92px 10px 24px;
+  display: flex; align-items: center; justify-content: center;
+}
+.reel-img {
+  max-width: 100%; max-height: 100%;
+  object-fit: contain; display: block;
+  background: #fff; border-radius: 10px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+  animation: reel-in 0.55s ease both;
+}
+@keyframes reel-in {
+  from { opacity: 0; transform: scale(1.03); }
+  to { opacity: 1; transform: scale(1); }
+}
+.reel-wash { position: absolute; inset: 0; opacity: 0.85; }
+.reel-bigtext {
+  position: relative; z-index: 1; max-width: 760px; padding: 0 40px 90px;
+  text-align: left; animation: reel-in 0.5s ease both;
+}
+.reel-eyebrow {
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: 1.4px;
+  color: var(--accent-2); margin-bottom: 14px;
+}
+.reel-bigtitle { font-size: clamp(26px, 3.4vw, 46px); font-weight: 600; line-height: 1.14; margin-bottom: 18px; }
+.reel-bigblurb { font-size: 15.5px; line-height: 1.65; color: #cbd0d8; }
+.reel-bigblurb .wl { color: #a9b6d6; }
+.reel-because { display: flex; flex-direction: column; gap: 9px; margin-bottom: 18px; }
+.reel-because-item { font-size: 19px; font-weight: 500; color: #e8e9ec; }
+
+/* ---- progress segments ---- */
+.reel-progress {
+  position: absolute; top: 14px; left: 22px; right: 86px; z-index: 5;
+  display: flex; gap: 5px; height: 3px;
+}
+.reel-progress .seg { flex: 1; background: rgba(255, 255, 255, 0.22); border-radius: 2px; overflow: hidden; }
+.reel-progress .seg-fill { height: 100%; width: 0; background: #fff; }
+
+/* ---- caption plate ---- */
+.reel-plate {
+  flex: 0 0 auto; margin-right: 86px; z-index: 4;
+  padding: 16px 34px 26px;
+  pointer-events: none;
+}
+.reel-kicker {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 1.1px;
+  color: var(--accent-2); margin-bottom: 7px; min-height: 13px;
+}
+.reel-title { font-size: 20px; font-weight: 600; margin: 0 0 4px; line-height: 1.25; }
+.reel-meta { color: var(--text-2); font-size: 13px; margin-bottom: 8px; }
+.reel-caption {
+  margin: 0 0 10px; max-width: 900px;
+  font-size: 15px; line-height: 1.6; color: #d8dce2;
+}
+.reel.text-beat .reel-caption { display: none; }
+.reel-tags { display: flex; gap: 7px; flex-wrap: wrap; }
+/* arXiv category a discovered paper was filed under. */
+.reel-tags .tag-cat {
+  background: rgba(74, 158, 234, 0.16); color: #9ec8f2; border-color: #2c4a6e;
+}
+
+/* ---- action rail ---- */
+.reel-rail {
+  position: absolute; right: 22px; top: 50%; transform: translateY(-50%);
+  z-index: 6; display: flex; flex-direction: column; gap: 12px;
+}
+.rail-btn {
+  width: 46px; height: 46px; border-radius: 50%;
+  background: rgba(28, 31, 38, 0.82); border: 1px solid var(--line);
+  color: #d4d8de; font-size: 17px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(6px); transition: transform 0.12s, border-color 0.12s, color 0.12s;
+}
+.rail-btn:hover { transform: scale(1.09); border-color: #46506a; color: #fff; }
+.rail-btn.on.wish { color: var(--wish); border-color: var(--wish); }
+.rail-btn.on.read { color: var(--accent); border-color: var(--accent); }
+.rail-btn.on.done { color: var(--accent-2); border-color: var(--accent-2); }
+
+/* ---- hints / states ---- */
+.reel-hint {
+  position: absolute; right: 22px; bottom: 16px; z-index: 5;
+  font-size: 10.5px; color: var(--text-3); letter-spacing: 0.3px;
+  opacity: 0; transition: opacity 0.2s;
+}
+.reel.active .reel-hint { opacity: 1; }
+.reel.loading .reel-progress .seg:first-child { animation: seg-pulse 1.1s ease-in-out infinite; }
+@keyframes seg-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+.reel.paused::after {
+  content: "paused"; position: absolute; top: 50%; left: 50%; z-index: 7;
+  transform: translate(-50%, -50%);
+  background: rgba(8, 9, 12, 0.78); border: 1px solid var(--line);
+  border-radius: 20px; padding: 7px 18px; font-size: 12px; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--text-2);
+}
+
+/* The title beat renders the title full-size in the stage; don't repeat it in
+   the plate. The closer beat keeps it, since its stage shows your notes. */
+.reel[data-beat-kind="title"] .reel-title,
+.reel[data-beat-kind="title"] .reel-meta { display: none; }
+/* Age tiers. Green reads as "fresh", amber as "canonical"; the middle band
+   stays neutral so it does not compete with either. */
+.reel-tags .tier-recent {
+  background: rgba(93, 202, 165, 0.18); color: #7fdcbb;
+  border-color: #2f6b57; font-weight: 600;
+}
+.reel-tags .tier-year {
+  background: rgba(154, 160, 170, 0.14); color: #b8bec8; border-color: #3a414d;
+}
+.reel-tags .tier-classic {
+  background: rgba(239, 159, 39, 0.15); color: #e8b35f;
+  border-color: #6b5222; font-weight: 600;
+}

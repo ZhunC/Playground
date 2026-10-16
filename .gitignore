@@ -9,3 +9,7 @@ refresh-log.txt
 refresh-catalog.cmd
 refresh-hidden.vbs
 start-hidden.vbs
+
+# figure-probe: pdf.js downloaded on demand, never committed
+tools/figure-probe/pdf.mjs
+tools/figure-probe/pdf.worker.mjs
